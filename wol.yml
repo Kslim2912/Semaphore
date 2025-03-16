@@ -1,19 +1,73 @@
-## 3.15.2025 ##
+## 3.16.2025 ##
+
 ---
-- name: Send Wake-on-LAN Packet from Remote Host
-  hosts: ProxMox-Backup-1  # This should be defined in your inventory file
+- name: Wake PBS via IPMI and verify access
+  hosts: localhost # Change
   gather_facts: no
-  vars:
-    target_mac: "AC:1F:6B:72:70:63"  # Replace with the MAC address of the target machine
-
   tasks:
-    - name: Send Wake-on-LAN packet
-      ansible.builtin.command:
-        cmd: "wakeonlan {{ target_mac }}"
-      register: wol_result
-      changed_when: false
-      failed_when: "'No such device' in wol_result.stderr"
+    - name: Send IPMI power-on command to PBS
+      command: >
+        ipmitool -I lanplus -H 192.168.8.53 -U Bruce -P "2YadMan6#" power on
+      register: ipmi_result
+      changed_when: "'Chassis Power is on' in ipmi_result.stdout"
 
-    - name: Display result
-      ansible.builtin.debug:
-        msg: "Wake-on-LAN packet sent to {{ target_mac }}"
+    - name: Debug IPMI output #Changed
+      debug:
+        msg: "{{ ipmi_result.stdout }}"
+
+    - name: Wait for PBS to boot
+      wait_for:
+        host: 192.168.8.144
+        port: 22
+        timeout: 180
+      delegate_to: localhost
+      register: wait_result
+      failed_when: wait_result.elapsed == 180
+
+- name: Verify PBS is online
+  hosts: pbs
+  gather_facts: no
+  tasks:
+    - name: Check PBS connectivity
+      ping:
+
+    - name: Check PBS uptime
+      command: "uptime" #Changed
+      register: uptime_result
+
+    - name: Display PBS uptime
+      debug:
+        msg: "{{ uptime_result.stdout }}"  
+
+###  SHUTDOWN SEQUENCE ##
+
+    - name: Wait for 5 minutes before shutting down
+      pause:
+        minutes: 5
+
+    - name: Gracefully shut down PBS
+      command: shutdown -h now
+      become: yes
+
+- name: Verify PBS is powered off
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Wait for PBS to go offline
+      wait_for:
+        host: 192.168.8.144
+        port: 22
+        state: stopped
+        timeout: 180
+      delegate_to: localhost
+
+    - name: Check PBS power status via IPMI
+      command: >
+        ipmitool -I lanplus -H 192.168.8.53 -U Bruce -P "2YadMan6#" power status
+      register: ipmi_status
+
+    - name: Display IPMI power status
+      debug:
+        msg: "{{ ipmi_status.stdout }}"
+
+        
