@@ -1,0 +1,19 @@
+## 3.15.2025 ##
+---
+- name: Send Wake-on-LAN Packet from Remote Host
+  hosts: ProxMox-Backup-1  # This should be defined in your inventory file
+  gather_facts: no
+  vars:
+    target_mac: "AC:1F:6B:72:70:63"  # Replace with the MAC address of the target machine
+
+  tasks:
+    - name: Send Wake-on-LAN packet
+      ansible.builtin.command:
+        cmd: "wakeonlan {{ target_mac }}"
+      register: wol_result
+      changed_when: false
+      failed_when: "'No such device' in wol_result.stderr"
+
+    - name: Display result
+      ansible.builtin.debug:
+        msg: "Wake-on-LAN packet sent to {{ target_mac }}"
